@@ -1,3 +1,45 @@
-.env
-*.exe
+
+
+# --- Version Control ---
+.git
+.gitignore
+.hg
+.svn
+
+# --- Dependencies ---
+
+
+# --- Build Outputs and Cache ---
 cmt-backend
+.cache/
+*.exe
+
+# --- env and secrets ---
+.env
+.env.*
+.env.*.local
+*.pem
+*.key
+id_rsa
+secrets.json
+
+# --- IDE and System Files ---
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+.DS_Store
+Thumbs.db
+.claude
+.codex
+.gemini
+.agents
+agents
+
+# --- Logs and Testing ---
+logs/
+*.log
+.coverage

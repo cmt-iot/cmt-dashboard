@@ -1,6 +1,40 @@
-# local secrets — never commit
-.env
 
-# build output
+# Build artifacts
+cmt-backend 
 *.exe
-cmt-backend
+build/
+
+
+# IDE and System Files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store/
+.DS_Store
+
+# env
+.env
+.env.*
+!.env.example
+*.local
+
+# log files
+*.log
+*.tmp
+logs/
+
+# Artifacts
+temp/
+.claude/
+.agents/
+.codex/
+CLAUDE.md
+AGENTS.md
+
+# exception
+!important_debug.log
