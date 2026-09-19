@@ -38,6 +38,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - backend-net
 
   emqx:
     image: emqx/emqx:6.3
@@ -53,6 +55,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+    networks:
+      - backend-net
 
   nodered:
     build: ./node-red            # see node-red/Dockerfile (adds the MySQL node)
@@ -72,6 +76,8 @@ services:
         condition: service_healthy
       emqx:
         condition: service_healthy
+    networks:
+      - backend-net
   backend:
     build: ./backend
     image: ghcr.io/cmt-iot/cmt-dashboard-backend:latest
@@ -87,14 +93,22 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    networks:
+      - backend-net
+      - frontend-net
   frontend:
     build: ./car-monitor
     image: ghcr.io/cmt-iot/cmt-dashboard-frontend:latest
     container_name: cmt-frontend
     restart: unless-stopped
-    ports: 
+    ports:
       - "8081:80"
     depends_on:
       - backend
+    networks:
+      - frontend-net
+networks:
+  backend-net:
+  frontend-net:
 volumes:
   cmt-mysql-data:
