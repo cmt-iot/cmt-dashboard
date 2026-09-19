@@ -10,7 +10,7 @@
         "id": "cmt-test",
         "type": "tab",
         "label": "Test Publisher (no ESP32 yet)",
-        "disabled": false,
+        "disabled": true,
         "info": "Publishes realistic fake cmt/{id} messages every 2s so the pipeline can run without hardware.\nThe orange inject publishes deliberately BAD messages so you can watch the guard reject them.\nDISABLE this tab (right-click tab -> Disable) once a real ESP32 is publishing."
     },
     {
@@ -25,13 +25,20 @@
         "protocolVersion": "4",
         "keepalive": "60",
         "cleansession": true,
+        "autoUnsubscribe": true,
         "birthTopic": "",
         "birthQos": "0",
         "birthPayload": "",
+        "birthMsg": {},
         "closeTopic": "",
+        "closePayload": "",
+        "closeMsg": {},
         "willTopic": "",
         "willQos": "0",
-        "willPayload": ""
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
     },
     {
         "id": "cmtdb",
@@ -129,12 +136,15 @@
         "qos": "1",
         "datatype": "json",
         "broker": "emqx_broker",
+        "nl": false,
+        "rap": false,
         "inputs": 0,
         "x": 140,
         "y": 160,
         "wires": [
             [
-                "v_status"
+                "v_status",
+                "5e0eb33b05d009e8"
             ]
         ]
     },
@@ -145,11 +155,17 @@
         "name": "validate status",
         "func": "const id = (msg.topic || '').split('/')[1];\nconst p = msg.payload;\nconst bad = (reason) => ({ payload: { truck_id: id || null, topic: msg.topic, reason, raw: p } });\n\nif (!id) return [null, bad('empty truck id in topic')];\nif (!p || typeof p !== 'object' || Array.isArray(p)) return [null, bad('payload is not a JSON object')];\nif (typeof p.online !== 'boolean') return [null, bad('online must be true or false')];\n\nconst known = global.get('knownTrucks') || {};\nif (Object.keys(known).length && !known[id]) return [null, bad('unknown truck id: ' + id)];\n\nreturn [msg, null];",
         "outputs": 2,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
         "x": 350,
         "y": 160,
         "wires": [
             [
-                "fn_status"
+                "fn_status",
+                "4502209cc7399d68"
             ],
             [
                 "fn_reject"
@@ -163,11 +179,17 @@
         "name": "build status upsert",
         "func": "const id = msg.topic.split('/')[1];\nconst p = msg.payload;\nmsg.topic = 'INSERT INTO truck_status (truck_id, online, last_seen) VALUES (?, ?, NOW()) ON DUPLICATE KEY UPDATE online=VALUES(online), last_seen=NOW()';\nmsg.payload = [id, p.online ? 1 : 0];\nreturn msg;",
         "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
         "x": 570,
         "y": 160,
         "wires": [
             [
-                "db_status"
+                "db_status",
+                "043a5afad7bbdf85"
             ]
         ]
     },
@@ -192,6 +214,8 @@
         "qos": "0",
         "datatype": "json",
         "broker": "emqx_broker",
+        "nl": false,
+        "rap": false,
         "inputs": 0,
         "x": 150,
         "y": 240,
@@ -206,7 +230,7 @@
         "type": "function",
         "z": "cmt-flow",
         "name": "validate telemetry",
-        "func": "const id = (msg.topic || '').split('/')[1];\nconst p = msg.payload;\nconst bad = (reason) => ({ payload: { truck_id: id || null, topic: msg.topic, reason, raw: p } });\nconst num = (v) => typeof v === 'number' && isFinite(v);\n\n// --- structural -----------------------------------------------------------\nif (!id) return [null, bad('empty truck id in topic')];\nif (!p || typeof p !== 'object' || Array.isArray(p)) return [null, bad('payload is not a JSON object')];\nconst known = global.get('knownTrucks') || {};\nif (Object.keys(known).length && !known[id]) return [null, bad('unknown truck id: ' + id)];\n\n// --- range / plausibility -------------------------------------------------\nif (!num(p.lat) || !num(p.lng)) return [null, bad('lat/lng missing or not numeric')];\nif (p.lat < -90 || p.lat > 90 || p.lng < -180 || p.lng > 180) return [null, bad('lat/lng out of valid range')];\nif (p.lat === 0 && p.lng === 0) return [null, bad('GPS has no fix (0,0)')];\nif (!num(p.speedKph) || p.speedKph < 0 || p.speedKph > 120) return [null, bad('speedKph out of range 0-120: ' + p.speedKph)];\nif (!num(p.odometerKm) || p.odometerKm < 0) return [null, bad('odometerKm missing or negative')];\nif (!num(p.tripKm) || p.tripKm < 0) return [null, bad('tripKm missing or negative')];\nif (!num(p.motorTempC) || p.motorTempC < -40 || p.motorTempC > 150) return [null, bad('motorTempC out of range -40..150: ' + p.motorTempC)];\n\n// --- temporal: compare against the last ACCEPTED message ------------------\nconst now = Date.now();\nconst prev = flow.get('last_tel_' + id);\nif (prev) {\n  const dt = Math.max(0.001, (now - prev.t) / 1000); // seconds\n  if (p.odometerKm < prev.odo - 0.01) return [null, bad('odometer went backwards: ' + prev.odo + ' -> ' + p.odometerKm)];\n  if ((p.odometerKm - prev.odo) / dt * 3600 > 200) return [null, bad('odometer jump implies >200 km/h')];\n  const dLat = (p.lat - prev.lat) * 111;\n  const dLng = (p.lng - prev.lng) * 111 * Math.cos(p.lat * Math.PI / 180);\n  const km = Math.sqrt(dLat * dLat + dLng * dLng);\n  if (km / dt * 3600 > 200) return [null, bad('GPS teleport: ' + km.toFixed(2) + ' km in ' + dt.toFixed(1) + 's')];\n}\nflow.set('last_tel_' + id, { t: now, odo: p.odometerKm, lat: p.lat, lng: p.lng });\n\nreturn [msg, null];",
+        "func": "const id = (msg.topic || '').split('/')[1];\nconst p = msg.payload;\nconst TEST_MODE = flow.get('testMode') === true;   // ← flag คุม temporal\nconst bad = (reason) => ({ payload: { truck_id: id || null, topic: msg.topic, reason, raw: p } });\nconst num = (v) => typeof v === 'number' && isFinite(v);\n\n// --- structural (เก็บเสมอ แม้ TEST_MODE) ---\nif (!id) return [null, bad('empty truck id in topic')];\nif (!p || typeof p !== 'object' || Array.isArray(p)) return [null, bad('payload is not a JSON object')];\nconst known = global.get('knownTrucks') || {};\nif (Object.keys(known).length && !known[id]) return [null, bad('unknown truck id: ' + id)];\n\n// --- range / plausibility (เก็บเสมอ) ---\nif (!num(p.lat) || !num(p.lng)) return [null, bad('lat/lng missing or not numeric')];\nif (p.lat < -90 || p.lat > 90 || p.lng < -180 || p.lng > 180) return [null, bad('lat/lng out of valid range')];\nif (p.lat === 0 && p.lng === 0) return [null, bad('GPS has no fix (0,0)')];\nif (!num(p.speedKph) || p.speedKph < 0 || p.speedKph > 120) return [null, bad('speedKph out of range 0-120: ' + p.speedKph)];\nif (!num(p.odometerKm) || p.odometerKm < 0) return [null, bad('odometerKm missing or negative')];\nif (!num(p.tripKm) || p.tripKm < 0) return [null, bad('tripKm missing or negative')];\nif (!num(p.motorTempC) || p.motorTempC < -40 || p.motorTempC > 150) return [null, bad('motorTempC out of range -40..150: ' + p.motorTempC)];\n\n// --- temporal (ข้ามทั้งหมดถ้า TEST_MODE) ---\nconst now = Date.now();\nconst prev = flow.get('last_tel_' + id);\nif (prev && !TEST_MODE) {\n  const dt = Math.max(0.001, (now - prev.t) / 1000);\n  if (p.odometerKm < prev.odo - 0.01) return [null, bad('odometer went backwards: ' + prev.odo + ' -> ' + p.odometerKm)];\n  if ((p.odometerKm - prev.odo) / dt * 3600 > 200) return [null, bad('odometer jump implies >200 km/h')];\n  const dLat = (p.lat - prev.lat) * 111;\n  const dLng = (p.lng - prev.lng) * 111 * Math.cos(p.lat * Math.PI / 180);\n  const km = Math.sqrt(dLat * dLat + dLng * dLng);\n  if (km / dt * 3600 > 200) return [null, bad('GPS teleport: ' + km.toFixed(2) + ' km in ' + dt.toFixed(1) + 's')];\n}\nflow.set('last_tel_' + id, { t: now, odo: p.odometerKm, lat: p.lat, lng: p.lng });\n\n// แสดง badge เตือนถ้า TEST_MODE เปิด\nnode.status(TEST_MODE\n  ? { fill: 'yellow', shape: 'dot', text: 'TEST_MODE — temporal checks OFF' }\n  : {});\n\nreturn [msg, null];",
         "outputs": 2,
         "timeout": "",
         "noerr": 0,
@@ -311,7 +335,7 @@
         "z": "cmt-flow",
         "mydb": "cmtdb",
         "name": "truck_status",
-        "x": 830,
+        "x": 790,
         "y": 320,
         "wires": [
             []
@@ -360,7 +384,7 @@
         "name": "build alert insert",
         "func": "const id = msg.topic.split('/')[1];\nconst p = msg.payload;\nmsg.topic = 'INSERT INTO alerts (truck_id, ts, type, severity, message) VALUES (?, NOW(3), ?, ?, ?)';\nmsg.payload = [id, p.type.substring(0, 32), p.severity || 'info', p.message ? String(p.message).substring(0, 255) : null];\nreturn msg;",
         "outputs": 1,
-        "x": 570,
+        "x": 560,
         "y": 440,
         "wires": [
             [
@@ -374,7 +398,7 @@
         "z": "cmt-flow",
         "mydb": "cmtdb",
         "name": "alerts",
-        "x": 830,
+        "x": 770,
         "y": 440,
         "wires": [
             []
@@ -387,8 +411,13 @@
         "name": "build reject insert",
         "func": "// Every validate node's SECOND output lands here. We store why the message\n// was refused, plus the raw payload, so a broken sensor is VISIBLE rather\n// than silently dropped.\nconst p = msg.payload || {};\nconst reason = String(p.reason || 'unknown');\n\n// Count rejects on the node's status badge for quick visual feedback.\nconst n = (flow.get('rejectCount') || 0) + 1;\nflow.set('rejectCount', n);\nnode.status({ fill: 'red', shape: 'ring', text: n + ' rejected — ' + reason.substring(0, 40) });\n\nmsg.topic = 'INSERT INTO rejects (truck_id, topic, reason, payload) VALUES (?, ?, ?, ?)';\nmsg.payload = [\n  p.truck_id || null,\n  p.topic ? String(p.topic).substring(0, 128) : null,\n  reason.substring(0, 255),\n  JSON.stringify(p.raw === undefined ? null : p.raw)\n];\nreturn msg;",
         "outputs": 1,
-        "x": 570,
-        "y": 540,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 550,
+        "y": 520,
         "wires": [
             [
                 "db_reject",
@@ -402,8 +431,8 @@
         "z": "cmt-flow",
         "mydb": "cmtdb",
         "name": "rejects",
-        "x": 830,
-        "y": 540,
+        "x": 770,
+        "y": 520,
         "wires": [
             []
         ]
@@ -421,7 +450,7 @@
         "targetType": "msg",
         "statusVal": "",
         "statusType": "auto",
-        "x": 830,
+        "x": 780,
         "y": 600,
         "wires": []
     },
@@ -471,7 +500,7 @@
         "z": "cmt-flow",
         "mydb": "cmtdb",
         "name": "telemetry",
-        "x": 1000,
+        "x": 960,
         "y": 660,
         "wires": [
             []
@@ -498,6 +527,11 @@
         "name": "report by exception",
         "func": "// REPORT BY EXCEPTION: only write a history row when something meaningful\n// changed, OR the heartbeat expired. A parked truck therefore produces one\n// row a minute instead of one every 5 seconds.\n//\n// NOTE: this only filters the HISTORY table. truck_status (the live row the\n// dashboard reads) is still updated by every MQTT message, so last_seen keeps\n// moving and a parked truck never looks offline.\n\n// --- tune these ---------------------------------------------------------\nconst MOVE_KM = 0.005;   // 5 metres of odometer travel counts as \"moved\"\nconst SOC_STEP = 1;      // battery % change worth recording\nconst HEARTBEAT_MS = 60000; // always store at least one row per truck per minute\n// ------------------------------------------------------------------------\n\nconst rows = Array.isArray(msg.payload) ? msg.payload : [];\nconst now = Date.now();\nconst out = [];\nlet skipped = 0;\n\nfor (const s of rows) {\n  const prev = flow.get('lastHist_' + s.truck_id);\n\n  const moved = !prev || (s.odometer_km - prev.odo) > MOVE_KM;\n  const socChanged = !prev || Math.abs((s.total_pct || 0) - (prev.pct || 0)) >= SOC_STEP;\n  const stale = !prev || (now - prev.t) > HEARTBEAT_MS;\n\n  if (!moved && !socChanged && !stale) {\n    skipped++;\n    continue; // idle and nothing changed — don't store\n  }\n\n  flow.set('lastHist_' + s.truck_id, { t: now, odo: s.odometer_km, pct: s.total_pct });\n\n  // the driver returns JSON columns already parsed, so re-stringify if needed\n  const cells = (typeof s.cells_json === 'string' || s.cells_json === null)\n    ? s.cells_json\n    : JSON.stringify(s.cells_json);\n\n  out.push({\n    topic: 'INSERT INTO telemetry (truck_id, ts, lat, lng, speed_kph, odometer_km, motor_temp_c, pack_voltage, pack_current_a, total_pct, cells_json, delta_mv, max_temp_c) VALUES (?, NOW(3), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',\n    payload: [s.truck_id, s.lat, s.lng, s.speed_kph, s.odometer_km, s.motor_temp_c, s.pack_voltage, s.pack_current_a, s.total_pct, cells, s.delta_mv, s.max_temp_c]\n  });\n}\n\nnode.status({ fill: 'blue', shape: 'dot', text: out.length + ' stored, ' + skipped + ' idle-skipped' });\nreturn [out];",
         "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
         "x": 780,
         "y": 660,
         "wires": [
@@ -507,9 +541,114 @@
         ]
     },
     {
+        "id": "4502209cc7399d68",
+        "type": "debug",
+        "z": "cmt-flow",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "false",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 500,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "5e0eb33b05d009e8",
+        "type": "debug",
+        "z": "cmt-flow",
+        "name": "debug 2",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 320,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "043a5afad7bbdf85",
+        "type": "debug",
+        "z": "cmt-flow",
+        "name": "debug 3",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 780,
+        "y": 120,
+        "wires": []
+    },
+    {
+        "id": "b7014499f5db3f9d",
+        "type": "change",
+        "z": "cmt-flow",
+        "name": "",
+        "rules": [
+            {
+                "t": "set",
+                "p": "testMode",
+                "pt": "flow",
+                "to": "true",
+                "tot": "bool"
+            }
+        ],
+        "action": "",
+        "property": "",
+        "from": "",
+        "to": "",
+        "reg": false,
+        "x": 390,
+        "y": 780,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "aa7d1a76c5e8d1c1",
+        "type": "inject",
+        "z": "cmt-flow",
+        "name": "",
+        "props": [
+            {
+                "p": "payload"
+            },
+            {
+                "p": "topic",
+                "vt": "str"
+            }
+        ],
+        "repeat": "",
+        "crontab": "",
+        "once": false,
+        "onceDelay": 0.1,
+        "topic": "",
+        "payload": "",
+        "payloadType": "date",
+        "x": 140,
+        "y": 780,
+        "wires": [
+            [
+                "b7014499f5db3f9d"
+            ]
+        ]
+    },
+    {
         "id": "t_online",
         "type": "inject",
         "z": "cmt-test",
+        "d": true,
         "name": "once on deploy: mark online",
         "props": [
             {
@@ -555,20 +694,21 @@
         "id": "t_every2s",
         "type": "inject",
         "z": "cmt-test",
+        "d": true,
         "name": "every 2s",
         "props": [
             {
                 "p": "payload"
             }
         ],
-        "repeat": "2",
+        "repeat": "",
         "crontab": "",
         "once": false,
         "onceDelay": 0.1,
         "topic": "",
         "payload": "",
         "payloadType": "date",
-        "x": 130,
+        "x": 160,
         "y": 160,
         "wires": [
             [
@@ -600,6 +740,7 @@
         "id": "t_bad",
         "type": "inject",
         "z": "cmt-test",
+        "d": true,
         "name": "CLICK ME: publish BAD data",
         "props": [
             {
@@ -649,9 +790,14 @@
         "topic": "",
         "qos": "",
         "retain": "",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
         "broker": "emqx_broker",
-        "x": 760,
-        "y": 160,
+        "x": 1010,
+        "y": 180,
         "wires": []
     }
 ]

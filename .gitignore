@@ -11,3 +11,4 @@ backend/*.exe
 # ignore credentials/secrets and generated files.
 node-red/data/*
 !node-red/data/flows.json
+node-red/data/flows_cred.json

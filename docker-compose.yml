@@ -55,6 +55,7 @@ services:
   nodered:
     build: ./node-red            # see node-red/Dockerfile (adds the MySQL node)
     container_name: cmt-nodered
+    user: "1001:1001"
     restart: unless-stopped
     ports:
       - "1881:1880"
@@ -69,28 +70,26 @@ services:
       emqx:
         condition: service_healthy
   backend:
-      build: ./backend
-      container_name: cmt-backend
-      restart: unless-stopped
-      ports:
-        - "8080:8080"
-      environment:
-        TZ: Asia/Bangkok
-        PORT: "8080"
-        SIMULATE: "false"        
-        DB_DSN: "root:${MYSQL_ROOT_PASSWORD}@tcp(mysql:3306)/cmt?parseTime=true"
-      depends_on:
-        mysql:
-          condition: service_healthy
-
-  frontend:
-    build: ./car-monitor        # see car-monitor/Dockerfile (nginx serves the Vite build)
-    container_name: cmt-frontend
+    build: ./backend
+    container_name: cmt-backend
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "8080:8080"
+    environment:
+      TZ: Asia/Bangkok
+      PORT: "8080"
+      SIMULATE: "false"
+      DB_DSN: "root:${MYSQL_ROOT_PASSWORD}@tcp(mysql:3306)/cmt?parseTime=true"
+    depends_on:
+      mysql:
+        condition: service_healthy
+  frontend:
+    build: ./car-monitor
+    container_name: cmt-frontend     
+    restart: unless-stopped
+    ports: 
+      - "8081:80"
     depends_on:
       - backend
-
 volumes:
   cmt-mysql-data:
