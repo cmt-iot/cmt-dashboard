@@ -1,6 +1,8 @@
 # Cement Truck Monitor — local infrastructure
 #
-# Start:   docker compose up -d --build     (--build the first time, and after editing node-red/Dockerfile)
+# Local dev:  docker compose up -d --build   (--build the first time, and after editing node-red/Dockerfile)
+# On VPS:     docker compose pull && docker compose up -d --remove-orphans
+#             (backend/frontend/nodered images are built + pushed by CI — .github/workflows/ci-cd.yml)
 # Stop:    docker compose down              (data is kept in the named volume)
 # Reset:   docker compose down -v           (deletes MySQL data; schema re-applies on next start)
 #
@@ -54,6 +56,7 @@ services:
 
   nodered:
     build: ./node-red            # see node-red/Dockerfile (adds the MySQL node)
+    image: ghcr.io/cmt-iot/cmt-dashboard-nodered:latest
     container_name: cmt-nodered
     user: "1001:1001"
     restart: unless-stopped
@@ -71,6 +74,7 @@ services:
         condition: service_healthy
   backend:
     build: ./backend
+    image: ghcr.io/cmt-iot/cmt-dashboard-backend:latest
     container_name: cmt-backend
     restart: unless-stopped
     ports:
@@ -85,7 +89,8 @@ services:
         condition: service_healthy
   frontend:
     build: ./car-monitor
-    container_name: cmt-frontend     
+    image: ghcr.io/cmt-iot/cmt-dashboard-frontend:latest
+    container_name: cmt-frontend
     restart: unless-stopped
     ports: 
       - "8081:80"

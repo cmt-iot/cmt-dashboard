@@ -1,6 +1,7 @@
 # local secrets
 .env
 backend/.env
+.key
 
 # dependencies / build output
 node_modules/
