@@ -1,31 +1,23 @@
-# Cement Truck Monitor — local infrastructure
-#
-# Local dev:  docker compose up -d --build   (--build the first time, and after editing node-red/Dockerfile)
-# On VPS:     docker compose pull && docker compose up -d --remove-orphans
-#             (backend/frontend/nodered images are built + pushed by CI — .github/workflows/ci-cd.yml)
-# Stop:    docker compose down              (data is kept in the named volume)
-# Reset:   docker compose down -v           (deletes MySQL data; schema re-applies on next start)
-#
-# Reads MYSQL_ROOT_PASSWORD from a ".env" file in this folder (git-ignored).
-#
-# Ports on your machine (all shifted to avoid the hospital project, which uses
-# 3307 MySQL / 1883 MQTT / 18083 EMQX dashboard / 1880 Node-RED):
-#   3308   MySQL          (3306 = local MySQL80 install)
-#   1884   EMQX MQTT      <- the ESP32 connects here
-#   18084  EMQX dashboard (login admin / public)
-#   1881   Node-RED editor
-#
-# NOTE: these are HOST ports only. Inside the compose network the containers
-# still talk on their standard ports (emqx:1883, mysql:3306), which is why the
-# Node-RED flow needs no changes.
+# Cement Truck Monitor — infrastructure for local dev and the VPS.
+# Only 8081 (dashboard) and 1884 (MQTT data channel) are public. 
+# The rest bind 127.0.0.1
+
+# Cap container logs so they can't fill the disk. Docker's default is unlimited.
+# Read with `docker logs <name>`; gone once the container is removed.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
 
 services:
   mysql:
     image: mysql:8.0
     container_name: cmt-mysql
+    logging: *logging
     restart: unless-stopped
     ports:
-      - "3308:3306"
+      - "127.0.0.1:3308:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       TZ: Asia/Bangkok
@@ -44,10 +36,11 @@ services:
   emqx:
     image: emqx/emqx:6.3
     container_name: cmt-emqx
+    logging: *logging
     restart: unless-stopped
     ports:
-      - "1884:1883"     # MQTT — the ESP32 (and Node-RED test publisher) connect here
-      - "18084:18083"   # web dashboard
+      - "1884:1883"               # data publishing path (From ESP32)
+      - "127.0.0.1:18084:18083"   # emqx admin port (SSH only)
     environment:
       TZ: Asia/Bangkok
     healthcheck:
@@ -59,13 +52,14 @@ services:
       - backend-net
 
   nodered:
-    build: ./node-red            # see node-red/Dockerfile (adds the MySQL node)
+    build: ./node-red           
     image: ghcr.io/cmt-iot/cmt-dashboard-nodered:latest
     container_name: cmt-nodered
+    logging: *logging
     user: "1001:1001"
     restart: unless-stopped
     ports:
-      - "1881:1880"
+      - "127.0.0.1:1881:1880"   # nodered admin port (SSH only)
     environment:
       TZ: Asia/Bangkok
     volumes:
@@ -82,14 +76,15 @@ services:
     build: ./backend
     image: ghcr.io/cmt-iot/cmt-dashboard-backend:latest
     container_name: cmt-backend
+    logging: *logging
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"   # frontend nginx proxies /api and /ws over frontend-net
     environment:
       TZ: Asia/Bangkok
       PORT: "8080"
       SIMULATE: "false"
-      DB_DSN: "root:${MYSQL_ROOT_PASSWORD}@tcp(mysql:3306)/cmt?parseTime=true"
+      DB_DSN: "${DB_DSN}"
     depends_on:
       mysql:
         condition: service_healthy
@@ -100,9 +95,10 @@ services:
     build: ./car-monitor
     image: ghcr.io/cmt-iot/cmt-dashboard-frontend:latest
     container_name: cmt-frontend
+    logging: *logging
     restart: unless-stopped
     ports:
-      - "8081:80"
+      - "8081:80"       # public
     depends_on:
       - backend
     networks:

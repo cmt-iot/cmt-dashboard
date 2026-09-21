@@ -21,27 +21,63 @@ docker compose up -d
 cd car-monitor && npm install && npm run dev
 ```
 
-Ports for local dev
-
-- Dashboard: http://localhost:5173
-- API: http://localhost:8080
-- Node-RED: `1881`
-- EMQX dashboard: `18084` (admin / public)
-- MySQL: `3308`
+Vite dev server runs on http://localhost:5173 and proxies to the API.
 
 ## The why
 
 [The problem project solve]. See [docs/architecture.md](docs/architecture.md).
 
-## Repo
+---
 
-| Path                        | What                                                              |
-| --------------------------- | ----------------------------------------------------------------- |
-| [backend/](backend/)         | Go API REST endpoint, polling data with Websocket, manage MySQL |
-| [car-monitor/](car-monitor/) | React + Vite dashboard (map, telemetry, alerts)                   |
-| [node-red/](node-red/)       | MQTT ingest flow, validation, MySQL writes                        |
-| [db/](db/)                   | Schema, auto-loaded by MySQL on first start                       |
-| [docs/](docs/)               | Architecture, MQTT topics list , diagram                          |
+## Ports
+
+
+| Port  | Service                                                           | Exposure  |
+| ------- | ------------------------------------------------------------------- | ----------- |
+| 8081  | Dashboard (nginx serving the React build)                         | public    |
+| 1884  | EMQX MQTT — the ESP32 publishes here                             | public    |
+| 8080  | Go API Server<br />nginx proxies`/api` and `/ws` to it internally | localhost |
+| 1881  | Node-RED editor                                                   | localhost |
+| 18084 | EMQX dashboard (admin / public)                                   | localhost |
+| 3308  | MySQL                                                             | localhost |
+
+### Reaching the non-public port
+
+such as nodered editor use SSH Tunnel
+
+```bash
+ssh -N -L 1881:127.0.0.1:1881 -L 18084:127.0.0.1:18084 <user>@<vps-ip>
+```
+
+Leave it running, then open http://localhost:1881 (Node-RED) or
+http://localhost:18084 (EMQX).
+
+If port is already taken, Change the left-hand number:
+`-L 9999:127.0.0.1:1881` so it serves it at http://localhost:9999.
+
+### Logs
+
+```bash
+# Example nodered admind container log
+docker logs cmt-nodered                          # or cmt-backend, cmt-emqx, cmt-mysql
+docker logs --since 1h --timestamps cmt-nodered  # narrow a window
+docker logs -f cmt-nodered                       # follow live
+docker compose logs --tail 50                    # every service at once
+sudo journalctl -u ssh --since today             # SSH logins
+sudo tail /var/log/nginx/access.log              # host nginx, port 80
+```
+
+Capped at 10MB × 5 files per service and gone once a container is removed — EMQX
+keeps no log file of its own, so its history dies with the container. 
+
+## Deploying to the VPS
+
+```bash
+docker compose pull && docker compose up -d --remove-orphans
+```
+
+Images are built and pushed by CI — see
+[.github/workflows/](.github/workflows/) and [docs/cicd.md](docs/cicd.md).
 
 ## Contributing
 
