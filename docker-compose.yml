@@ -56,7 +56,7 @@ services:
     image: ghcr.io/cmt-iot/cmt-dashboard-nodered:latest
     container_name: cmt-nodered
     logging: *logging
-    user: "1001:1001"
+    user: "1000:1000"
     restart: unless-stopped
     ports:
       - "127.0.0.1:1881:1880"   # nodered admin port (SSH only)
