@@ -71,5 +71,6 @@ jobs:
           port: ${{ vars.VPS_SSH_PORT || 22 }}
           script: |
             cd ${{ vars.VPS_DEPLOY_PATH || '~/cmt-dashboard' }}
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull
             docker compose up -d --remove-orphans

@@ -15,6 +15,7 @@ ssh-keygen -t ed25519 -C "cmt-dashboard-cd" -f ssh_key -N ""
 ```
 
 จะได้ 2 ไฟล์:
+
 - `ssh_key` — private key (ห้าม commit ห้าม push เข้า repo)
 - `ssh_key.pub` — public key
 
@@ -57,16 +58,20 @@ nano .env   # ใส่ค่า MYSQL_ROOT_PASSWORD=<รหัสผ่าน�
 ไปที่ GitHub repo → Settings → Secrets and variables → Actions
 
 **Secrets** (ข้อมูลลับ เข้ารหัสไว้):
-| ชื่อ | ค่า |
-|---|---|
+
+
+| ชื่อ  | ค่า                                                                                                           |
+| ----------- | ------------------------------------------------------------------------------------------------------------------ |
 | `SSH_KEY` | เนื้อหาไฟล์ `ssh_key` (private key) ทั้งหมด รวมบรรทัด `-----BEGIN...` / `-----END...` |
 
 **Variables** (ข้อมูลทั่วไป ไม่ลับ):
-| ชื่อ | ค่า | หมายเหตุ |
-|---|---|---|
-| `VPS_HOST` | IP ของ VPS | เช่น `162.141.142.185` |
-| `VPS_USER` | username ที่ใช้ SSH | เช่น `dev` |
-| `VPS_SSH_PORT` | port SSH | ถ้าไม่ตั้งจะ default เป็น `22` |
+
+
+| ชื่อ          | ค่า                                | หมายเหตุ                                            |
+| ------------------- | --------------------------------------- | ------------------------------------------------------------- |
+| `VPS_HOST`        | IP ของ VPS                         | เช่น `162.141.142.185`                                  |
+| `VPS_USER`        | username ที่ใช้ SSH             | เช่น `dev`                                              |
+| `VPS_SSH_PORT`    | port SSH                              | ถ้าไม่ตั้งจะ default เป็น `22`              |
 | `VPS_DEPLOY_PATH` | path ที่ clone repo ไว้บน VPS | ถ้าไม่ตั้งจะ default เป็น `~/cmt-dashboard` |
 
 ## 6. เตรียม Port บน VPS ให้ว่าง
@@ -85,6 +90,7 @@ docker compose down
 **รันเอง** — ไปที่ GitHub repo → Actions tab → เลือก workflow "CD" → Run workflow
 
 Workflow จะทำตามลำดับ:
+
 1. Build image ของ `backend`, `frontend`, `nodered` แล้ว push ขึ้น `ghcr.io/cmt-iot/cmt-dashboard-*`
 2. SSH เข้า VPS ตาม `VPS_HOST`/`VPS_USER`/`SSH_KEY` ที่ตั้งไว้
 3. รัน `docker compose pull && docker compose up -d --remove-orphans` ที่ `VPS_DEPLOY_PATH`
@@ -109,14 +115,16 @@ http://<vps-ip>:8081
 
 ## สรุป Services และ Port
 
-| Service | Host Port | ใช้ทำอะไร |
-|---|---|---|
-| frontend | 8081 | เว็บ dashboard (nginx serve React build) |
-| backend | 8080 | Go API + WebSocket |
-| nodered | 1881 | Node-RED editor |
-| emqx | 1884 (MQTT), 18084 (dashboard) | MQTT broker |
-| mysql | 3308 | ฐานข้อมูล |
+
+| Service  | Host Port                      | ใช้ทำอะไร                           |
+| ---------- | -------------------------------- | ---------------------------------------------- |
+| frontend | 8081                           | เว็บ dashboard (nginx serve React build) |
+| backend  | 8080                           | Go API + WebSocket                           |
+| nodered  | 1881                           | Node-RED editor                              |
+| emqx     | 1884 (MQTT), 18084 (dashboard) | MQTT broker                                  |
+| mysql    | 3308                           | ฐานข้อมูล                           |
 
 Internal network แบ่งเป็น 2 กลุ่ม:
+
 - `backend-net` — mysql, emqx, nodered, backend (คุยกันได้ภายใน)
 - `frontend-net` — backend, frontend (frontend เข้าถึงได้แค่ backend ผ่าน `/api` และ `/ws`, เข้า mysql/emqx/nodered ตรงๆ ไม่ได้)
