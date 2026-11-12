@@ -13,6 +13,11 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+# Ops and CD both touch the VPS: queue them, never run side by side or cancel mid-deploy.
+concurrency:
+  group: vps
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/cmt-dashboard

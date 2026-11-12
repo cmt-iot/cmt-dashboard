@@ -1,0 +1,51 @@
+name: Ops
+
+# Manual-only: run compose up/down/restart/ps on the VPS with the images it already has.
+# No build, no GHCR login. To ship new code use the CD workflow (push to main).
+# Same vars/secrets as cd.yml: VPS_HOST, VPS_USER, SSH_KEY, VPS_SSH_PORT, VPS_DEPLOY_PATH.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Compose action
+        type: choice
+        options: [ps, up, restart, down]
+        default: ps
+      service:
+        description: Service (all = whole stack)
+        type: choice
+        options: [all, mysql, emqx, nodered, backend, frontend]
+        default: all
+
+# Ops and CD both touch the VPS: queue them, never run side by side or cancel mid-deploy.
+concurrency:
+  group: vps
+  cancel-in-progress: false
+
+jobs:
+  ops:
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH — docker compose ${{ inputs.action }} ${{ inputs.service }}
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.VPS_HOST }}
+          username: ${{ vars.VPS_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ vars.VPS_SSH_PORT || 22 }}
+          script: |
+            set -e
+            cd ${{ vars.VPS_DEPLOY_PATH || '~/cmt-dashboard' }}
+            # must match the owner CD pulled from, or compose looks for the wrong image names
+            export GHCR_OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+            C="docker compose -f docker-compose.prod.yml"
+            SVC="${{ inputs.service }}"; [ "$SVC" = all ] && SVC=""
+            $C config --quiet
+            case "${{ inputs.action }}" in
+              up)      $C up -d --pull never $SVC ;;
+              restart) $C restart $SVC ;;
+              down)    $C down $SVC ;;   # keeps volumes (no -v), MySQL data is safe
+              ps)      ;;
+            esac
+            $C ps
