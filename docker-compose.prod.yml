@@ -1,0 +1,108 @@
+# Cement Truck Monitor — VPS / PROD. Pulls images built by .github/workflows/cd.yml.
+# Must stay identical to docker-compose.yml except image: (here) vs build: (dev).
+# Only 8081 (dashboard) and 1884 (MQTT data channel) are public. 
+# The rest bind 127.0.0.1
+
+# Cap container logs so they can't fill the disk. Docker's default is unlimited.
+# Read with `docker logs <name>`; gone once the container is removed.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  mysql:
+    image: docker.io/library/mysql:8.0
+    container_name: cmt-mysql
+    logging: *logging
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Bangkok
+    volumes:
+      - cmt-mysql-data:/var/lib/mysql
+      # any .sql here runs ONCE, on first start with an empty volume
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - backend-net
+
+  emqx:
+    image: docker.io/emqx/emqx:6.3
+    container_name: cmt-emqx
+    logging: *logging
+    restart: unless-stopped
+    ports:
+      - "1884:1883"               # data publishing path (From ESP32)
+      - "127.0.0.1:18084:18083"   # emqx admin port (SSH only)
+    environment:
+      TZ: Asia/Bangkok
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - backend-net
+
+  nodered:
+    image: ghcr.io/${GHCR_OWNER:-cmt-iot}/cmt-dashboard-nodered:latest
+    container_name: cmt-nodered
+    logging: *logging
+    user: "1000:1000"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1881:1880"   # nodered admin port (SSH only)
+    environment:
+      TZ: Asia/Bangkok
+    volumes:
+      # flows, credentials and installed extras live here so they survive restarts
+      - ./node-red/data:/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      emqx:
+        condition: service_healthy
+    networks:
+      - backend-net
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-cmt-iot}/cmt-dashboard-backend:latest
+    container_name: cmt-backend
+    logging: *logging
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"   # frontend nginx proxies /api and /ws over frontend-net
+    environment:
+      TZ: Asia/Bangkok
+      PORT: "8080"
+      SIMULATE: "false"
+      DB_DSN: "${DB_DSN}"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - backend-net
+      - frontend-net
+  frontend:
+    image: ghcr.io/${GHCR_OWNER:-cmt-iot}/cmt-dashboard-frontend:latest
+    container_name: cmt-frontend
+    logging: *logging
+    restart: unless-stopped
+    ports:
+      - "8081:80"       # public
+    depends_on:
+      - backend
+    networks:
+      - frontend-net
+networks:
+  backend-net:
+  frontend-net:
+volumes:
+  cmt-mysql-data:

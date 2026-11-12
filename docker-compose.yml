@@ -1,4 +1,5 @@
-# Cement Truck Monitor — infrastructure for local dev and the VPS.
+# Cement Truck Monitor — LOCAL DEV. Builds images from source.
+# Must stay identical to docker-compose.prod.yml except build: (here) vs image: (prod).
 # Only 8081 (dashboard) and 1884 (MQTT data channel) are public. 
 # The rest bind 127.0.0.1
 
@@ -53,7 +54,6 @@ services:
 
   nodered:
     build: ./node-red           
-    image: ghcr.io/cmt-iot/cmt-dashboard-nodered:latest
     container_name: cmt-nodered
     logging: *logging
     user: "1000:1000"
@@ -74,7 +74,6 @@ services:
       - backend-net
   backend:
     build: ./backend
-    image: ghcr.io/cmt-iot/cmt-dashboard-backend:latest
     container_name: cmt-backend
     logging: *logging
     restart: unless-stopped
@@ -93,7 +92,6 @@ services:
       - frontend-net
   frontend:
     build: ./car-monitor
-    image: ghcr.io/cmt-iot/cmt-dashboard-frontend:latest
     container_name: cmt-frontend
     logging: *logging
     restart: unless-stopped
